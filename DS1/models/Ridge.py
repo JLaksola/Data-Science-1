@@ -26,13 +26,25 @@ print(len(df.loc[TRAIN_START:"1999-12-01"]))
 print(len(df.loc[TEST_START:TEST_END]))
 
 
-# Recursive Training Initialization
+# Initialize lists to store results
 rmse_list = []
 predictions = []
 actuals = []
 dates = []
 features = []
 best_params = []
+
+# Initialize lists to store CV results
+cv_train_r2_list = []
+cv_valid_r2_list = []
+cv_train_rmse_list = []
+cv_valid_rmse_list = []
+
+# Scoring metrics
+scorers = {
+    "r2": "r2",
+    "rmse": "neg_root_mean_squared_error",
+}
 
 alphas = [0.01, 0.1, 1, 10, 100]  # Range of alphas to test
 # Time series split for feature selection
@@ -45,8 +57,8 @@ for date in pd.date_range(TEST_START, TEST_END, freq="MS"):  # Monthly rolling f
     train_end = (pd.Timestamp(date) - pd.DateOffset(years=5, months=1)).strftime(
         "%Y-%m-%d"
     )
-    train = df.loc[TRAIN_START:train_end]  # Use only past data
-    test_sample = df.loc[date:date]  # Predict one step ahead
+    train = df.loc[TRAIN_START:train_end]
+    test_sample = df.loc[date:date]
 
     # Split Features and Target
     X_train, y_train = train[X], train[y]
@@ -78,13 +90,26 @@ for date in pd.date_range(TEST_START, TEST_END, freq="MS"):  # Monthly rolling f
     gs = GridSearchCV(
         estimator=pipe,
         param_grid=param_grid,
-        scoring="r2",
+        scoring=scorers,
+        refit="r2",
         cv=GridSearch_split,
         n_jobs=-1,
+        return_train_score=True,
     )
 
     gs.fit(X_train, y_train)
 
+    # Extract and store CV train/valid R²
+    res = pd.DataFrame(gs.cv_results_)
+    best_row = res.loc[res["rank_test_r2"].idxmin()]
+
+    # Store CV results
+    cv_train_r2_list.append(float(best_row["mean_train_r2"]))
+    cv_valid_r2_list.append(float(best_row["mean_test_r2"]))
+    cv_train_rmse_list.append(float(-best_row["mean_train_rmse"]))
+    cv_valid_rmse_list.append(float(-best_row["mean_test_rmse"]))
+
+    # Get the best estimator from grid search
     best_pipe = gs.best_estimator_
     mask = best_pipe.named_steps["rfecv"].support_
     kept = [c for c, m in zip(X, mask) if m]
@@ -110,6 +135,10 @@ results_df = pd.DataFrame(
         "RMSE": rmse_list,
         "Best Parameters": best_params,
         "Features": features,
+        "CV_Train_R2": cv_train_r2_list,
+        "CV_Valid_R2": cv_valid_r2_list,
+        "CV_Train_RMSE": cv_train_rmse_list,
+        "CV_Valid_RMSE": cv_valid_rmse_list,
     }
 )
 results_df.set_index("Date", inplace=True)
@@ -124,13 +153,23 @@ results_df = pd.read_csv(
     parse_dates=True,
 )
 
+# Compute the mean CV R2 and RMSE
+mean_cv_train_r2 = np.mean(results_df["CV_Train_R2"])
+mean_cv_valid_r2 = np.mean(results_df["CV_Valid_R2"])
+mean_cv_valid_rmse = np.mean(results_df["CV_Valid_RMSE"])
+mean_cv_train_rmse = np.mean(results_df["CV_Train_RMSE"])
+print(f"Mean CV Train R²: {mean_cv_train_r2}")
+print(f"Mean CV Valid R²: {mean_cv_valid_r2}")
+print(f"Mean CV Train RMSE: {mean_cv_train_rmse}")
+print(f"Mean CV Valid RMSE: {mean_cv_valid_rmse}")
+
 # Compute RMSE
 y_true = results_df["Actual"].to_numpy()
 y_pred = results_df["Predicted"].to_numpy()
 oos_rmse = np.sqrt(mean_squared_error(y_true, y_pred))
 oos_r2 = r2_score(y_true, y_pred)
-print(f"OOS RMSE: {oos_rmse:.4f}")
-print(f"OOS R^2: {oos_r2:.4f}")
+print(f"OOS RMSE: {oos_rmse}")
+print(f"OOS R^2: {oos_r2}")
 
 # Plot actuals vs predicted
 fig, ax = plt.subplots(figsize=(10, 4))
@@ -141,5 +180,36 @@ ax.set_xlabel("Date")
 ax.set_ylabel("Return (%)")
 ax.legend()
 ax.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+
+# Plot the chosen features as a bar chart
+feature_counts = pd.Series(
+    [feat for sublist in features for feat in sublist]
+).value_counts()
+feature_counts = feature_counts.reindex(X, fill_value=0)
+plt.figure(figsize=(8, 4))
+feature_counts.plot(kind="bar")
+plt.title("Feature Selection Frequency in Ridge Regression")
+plt.xlabel("Features")
+plt.ylabel("Frequency")
+plt.xticks(rotation=45)
+plt.grid(axis="y", alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# Plot the chosen alpha values as a bar chart
+alpha_counts = (
+    pd.Series(best_params).apply(lambda x: x["rfecv__estimator__alpha"]).value_counts()
+)
+alpha_counts = alpha_counts.reindex(alphas, fill_value=0)
+plt.figure(figsize=(6, 4))
+alpha_counts.plot(kind="bar", color="orange")
+plt.title("Alpha Selection Frequency in Ridge Regression")
+plt.xlabel("Alpha")
+plt.ylabel("Frequency")
+plt.xticks(rotation=0)
+plt.grid(axis="y", alpha=0.3)
 plt.tight_layout()
 plt.show()

@@ -31,6 +31,17 @@ dates = []
 features = []
 best_params = []
 
+# Initialize lists to store CV results
+cv_train_r2_list = []
+cv_valid_r2_list = []
+cv_train_rmse_list = []
+cv_valid_rmse_list = []
+
+# Scoring metrics
+scorers = {
+    "r2": "r2",
+    "rmse": "neg_root_mean_squared_error",
+}
 
 # Time series split for hyperparameter tuning
 tscv = TimeSeriesSplit(n_splits=7, test_size=48, gap=60)
@@ -59,12 +70,24 @@ for date in pd.date_range(TEST_START, TEST_END, freq="MS"):  # Monthly rolling f
     gs = GridSearchCV(
         estimator=RandomForestRegressor(random_state=1, n_jobs=-1),
         param_grid=param_grid,
-        scoring="r2",
+        scoring=scorers,
+        refit="r2",
+        return_train_score=True,
         cv=tscv,
         n_jobs=-1,
     )
 
     gs.fit(X_train, y_train)
+
+    # Extract and store CV train/valid R2
+    res = pd.DataFrame(gs.cv_results_)
+    best_row = res.loc[res["rank_test_r2"].idxmin()]
+
+    # Store CV results
+    cv_train_r2_list.append(float(best_row["mean_train_r2"]))
+    cv_valid_r2_list.append(float(best_row["mean_test_r2"]))
+    cv_train_rmse_list.append(float(-best_row["mean_train_rmse"]))
+    cv_valid_rmse_list.append(float(-best_row["mean_test_rmse"]))
 
     best_rf = gs.best_estimator_
     best_params.append(gs.best_params_)
@@ -88,6 +111,10 @@ results_df = pd.DataFrame(
         "Predicted": predictions,
         "RMSE": rmse_list,
         "Best Parameters": best_params,
+        "CV_Train_R2": cv_train_r2_list,
+        "CV_Valid_R2": cv_valid_r2_list,
+        "CV_Train_RMSE": cv_train_rmse_list,
+        "CV_Valid_RMSE": cv_valid_rmse_list,
     }
 ).set_index("Date")
 
@@ -109,6 +136,16 @@ oos_r2 = r2_score(y_true, y_pred)
 print(f"OOS RMSE: {oos_rmse:.4f}")
 print(f"OOS R^2: {oos_r2:.4f}")
 
+# Compute the mean CV R2 and RMSE
+mean_cv_train_r2 = np.mean(results_df["CV_Train_R2"])
+mean_cv_valid_r2 = np.mean(results_df["CV_Valid_R2"])
+mean_cv_valid_rmse = np.mean(results_df["CV_Valid_RMSE"])
+mean_cv_train_rmse = np.mean(results_df["CV_Train_RMSE"])
+print(f"Mean CV Train R²: {mean_cv_train_r2}")
+print(f"Mean CV Valid R²: {mean_cv_valid_r2}")
+print(f"Mean CV Train RMSE: {mean_cv_train_rmse}")
+print(f"Mean CV Valid RMSE: {mean_cv_valid_rmse}")
+
 # Plot actuals vs predicted
 fig, ax = plt.subplots(figsize=(10, 4))
 ax.plot(results_df.index, results_df["Actual"], label="Actual", linewidth=1.5)
@@ -119,4 +156,49 @@ ax.set_ylabel("Return (%)")
 ax.legend()
 ax.grid(True, alpha=0.3)
 plt.tight_layout()
+plt.show()
+
+# Plot the feature importances
+importances = best_rf.feature_importances_
+feature_names = X
+indices = np.argsort(importances)
+plt.figure(figsize=(8, 4))
+plt.title("Feature Importances in Random Forest")
+plt.barh(range(len(indices)), importances[indices], align="center")
+plt.yticks(range(len(indices)), [feature_names[i] for i in indices])
+plt.xlabel("Relative Importance")
+plt.grid(axis="x", alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# Plot the chosen hyperparameters as subplots
+fig, axes = plt.subplots(1, 3, figsize=(18, 4), constrained_layout=True)
+
+# Plot max_depth selection frequency
+max_depth_values = [params["max_depth"] for params in best_params]
+max_depth_counts = pd.Series(max_depth_values).value_counts().sort_index()
+axes[0].bar(max_depth_counts.index, max_depth_counts.values, color="orange")
+axes[0].set_title("Max Depth Selection Frequency in Random Forest")
+axes[0].set_xlabel("Max Depth")
+axes[0].set_ylabel("Frequency")
+axes[0].grid(axis="y", alpha=0.3)
+
+# Plot min_samples_leaf selection frequency
+min_samples_values = [params["min_samples_leaf"] for params in best_params]
+min_samples_counts = pd.Series(min_samples_values).value_counts().sort_index()
+axes[1].bar(min_samples_counts.index, min_samples_counts.values, color="orange")
+axes[1].set_title("Min Samples Leaf Selection Frequency in Random Forest")
+axes[1].set_xlabel("Min Samples Leaf")
+axes[1].set_ylabel("Frequency")
+axes[1].grid(axis="y", alpha=0.3)
+
+# Plot max_features selection frequency
+max_features_values = [str(params["max_features"]) for params in best_params]
+max_features_counts = pd.Series(max_features_values).value_counts().sort_index()
+axes[2].bar(max_features_counts.index, max_features_counts.values, color="orange")
+axes[2].set_title("Max Features Selection Frequency in Random Forest")
+axes[2].set_xlabel("Max Features")
+axes[2].set_ylabel("Frequency")
+axes[2].grid(axis="y", alpha=0.3)
+
 plt.show()
