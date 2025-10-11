@@ -153,6 +153,10 @@ results_df = pd.read_csv(
     parse_dates=True,
 )
 
+# For this section, run the lines before the rolling forecast loop first to define X and alphas
+# Extract the Features column and convert it to a list of lists
+features = results_df["Features"].apply(eval).tolist()
+
 # Compute the mean CV R2 and RMSE
 mean_cv_train_r2 = np.mean(results_df["CV_Train_R2"])
 mean_cv_valid_r2 = np.mean(results_df["CV_Valid_R2"])
@@ -183,7 +187,6 @@ ax.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.show()
 
-
 # Plot the chosen features as a bar chart
 feature_counts = pd.Series(
     [feat for sublist in features for feat in sublist]
@@ -201,7 +204,9 @@ plt.show()
 
 # Plot the chosen alpha values as a bar chart
 alpha_counts = (
-    pd.Series(best_params).apply(lambda x: x["rfecv__estimator__alpha"]).value_counts()
+    pd.Series(results_df["Best Parameters"].apply(eval))
+    .apply(lambda x: x["rfecv__estimator__alpha"])
+    .value_counts()
 )
 alpha_counts = alpha_counts.reindex(alphas, fill_value=0)
 plt.figure(figsize=(6, 4))

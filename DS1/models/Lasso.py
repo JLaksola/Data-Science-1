@@ -146,6 +146,8 @@ print(features[-5:])
 # Save results
 results_df.to_csv("/Users/kayttaja/Desktop/DS1/reports/results_lasso.csv", index=True)
 
+# For this section, run the lines before the rolling forecast loop first to define X and alphas
+
 # Import results
 results_df = pd.read_csv(
     "/Users/kayttaja/Desktop/DS1/reports/results_lasso.csv",
@@ -183,15 +185,14 @@ ax.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.show()
 
-
 # Plot the chosen features as a bar chart
 feature_counts = pd.Series(
-    [feat for sublist in features for feat in sublist]
+    [feat for sublist in results_df["Features"] for feat in eval(sublist)]
 ).value_counts()
 feature_counts = feature_counts.reindex(X, fill_value=0)
 plt.figure(figsize=(8, 4))
 feature_counts.plot(kind="bar")
-plt.title("Feature Selection Frequency in Ridge Regression")
+plt.title("Feature Selection Frequency in Lasso Regression")
 plt.xlabel("Features")
 plt.ylabel("Frequency")
 plt.xticks(rotation=45)
@@ -201,12 +202,14 @@ plt.show()
 
 # Plot the chosen alpha values as a bar chart
 alpha_counts = (
-    pd.Series(best_params).apply(lambda x: x["rfecv__estimator__alpha"]).value_counts()
+    pd.Series(results_df["Best Parameters"])
+    .apply(lambda x: eval(x)["rfecv__estimator__alpha"])
+    .value_counts()
 )
 alpha_counts = alpha_counts.reindex(alphas, fill_value=0)
 plt.figure(figsize=(6, 4))
 alpha_counts.plot(kind="bar", color="orange")
-plt.title("Alpha Selection Frequency in Ridge Regression")
+plt.title("Alpha Selection Frequency in Lasso Regression")
 plt.xlabel("Alpha")
 plt.ylabel("Frequency")
 plt.xticks(rotation=0)

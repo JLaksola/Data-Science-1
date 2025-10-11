@@ -151,6 +151,8 @@ results_df.to_csv(
     "/Users/kayttaja/Desktop/DS1/reports/results_elastic_net.csv", index=True
 )
 
+# For this section, run the lines before the rolling forecast loop first to define X and alphas
+
 # Import results
 results_df = pd.read_csv(
     "/Users/kayttaja/Desktop/DS1/reports/results_elastic_net.csv",
@@ -158,23 +160,23 @@ results_df = pd.read_csv(
     parse_dates=True,
 )
 
-# Compute RMSE
+# Compute RMSE and R²
 y_true = results_df["Actual"].to_numpy()
 y_pred = results_df["Predicted"].to_numpy()
 oos_rmse = np.sqrt(mean_squared_error(y_true, y_pred))
 oos_r2 = r2_score(y_true, y_pred)
-print(f"OOS RMSE: {oos_rmse}")
-print(f"OOS R^2: {oos_r2}")
+print(f"OOS RMSE: {oos_rmse:.4f}")
+print(f"OOS R²: {oos_r2:.4f}")
 
-# Compute the mean CV R2 and RMSE
-mean_cv_train_r2 = np.mean(results_df["CV_Train_R2"])
-mean_cv_valid_r2 = np.mean(results_df["CV_Valid_R2"])
-mean_cv_valid_rmse = np.mean(results_df["CV_Valid_RMSE"])
-mean_cv_train_rmse = np.mean(results_df["CV_Train_RMSE"])
-print(f"Mean CV Train R²: {mean_cv_train_r2}")
-print(f"Mean CV Valid R²: {mean_cv_valid_r2}")
-print(f"Mean CV Train RMSE: {mean_cv_train_rmse}")
-print(f"Mean CV Valid RMSE: {mean_cv_valid_rmse}")
+# Compute the mean CV R² and RMSE
+mean_cv_train_r2 = results_df["CV_Train_R2"].mean()
+mean_cv_valid_r2 = results_df["CV_Valid_R2"].mean()
+mean_cv_train_rmse = results_df["CV_Train_RMSE"].mean()
+mean_cv_valid_rmse = results_df["CV_Valid_RMSE"].mean()
+print(f"Mean CV Train R²: {mean_cv_train_r2:.4f}")
+print(f"Mean CV Valid R²: {mean_cv_valid_r2:.4f}")
+print(f"Mean CV Train RMSE: {mean_cv_train_rmse:.4f}")
+print(f"Mean CV Valid RMSE: {mean_cv_valid_rmse:.4f}")
 
 # Plot actuals vs predicted
 fig, ax = plt.subplots(figsize=(10, 4))
@@ -190,12 +192,12 @@ plt.show()
 
 # Plot the chosen features as a bar chart
 feature_counts = pd.Series(
-    [feat for sublist in features for feat in sublist]
+    [feat for sublist in results_df["Features"].apply(eval) for feat in sublist]
 ).value_counts()
 feature_counts = feature_counts.reindex(X, fill_value=0)
 plt.figure(figsize=(8, 4))
 feature_counts.plot(kind="bar")
-plt.title("Feature Selection Frequency in Ridge Regression")
+plt.title("Feature Selection Frequency in Elastic Net")
 plt.xlabel("Features")
 plt.ylabel("Frequency")
 plt.xticks(rotation=45)
@@ -203,34 +205,37 @@ plt.grid(axis="y", alpha=0.3)
 plt.tight_layout()
 plt.show()
 
+# Create subplots for alpha and l1_ratio selection frequencies
+fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharey=True)
+
 # Plot the chosen alpha values as a bar chart
 alpha_counts = (
-    pd.Series(best_params).apply(lambda x: x["rfecv__estimator__alpha"]).value_counts()
+    pd.Series(results_df["Best Parameters"])
+    .apply(lambda x: eval(x)["rfecv__estimator__alpha"])
+    .value_counts()
 )
 alpha_counts = alpha_counts.reindex(alphas, fill_value=0)
-plt.figure(figsize=(6, 4))
-alpha_counts.plot(kind="bar", color="orange")
-plt.title("Alpha Selection Frequency in Elastic Net")
-plt.xlabel("Alpha")
-plt.ylabel("Frequency")
-plt.xticks(rotation=0)
-plt.grid(axis="y", alpha=0.3)
-plt.tight_layout()
-plt.show()
+alpha_counts.plot(kind="bar", color="orange", ax=axes[0])
+axes[0].set_title("Alpha Selection Frequency in Elastic Net")
+axes[0].set_xlabel("Alpha")
+axes[0].set_ylabel("Frequency")
+axes[0].set_xticks(range(len(alphas)))
+axes[0].set_xticklabels(alphas, rotation=0)
+axes[0].grid(axis="y", alpha=0.3)
 
 # Plot the chosen l1_ratio values as a bar chart
 l1_counts = (
-    pd.Series(best_params)
-    .apply(lambda x: x["rfecv__estimator__l1_ratio"])
+    pd.Series(results_df["Best Parameters"])
+    .apply(lambda x: eval(x)["rfecv__estimator__l1_ratio"])
     .value_counts()
 )
 l1_counts = l1_counts.reindex(l1_grid, fill_value=0)
-plt.figure(figsize=(6, 4))
-l1_counts.plot(kind="bar", color="green")
-plt.title("L1 Ratio Selection Frequency in Elastic Net")
-plt.xlabel("L1 Ratio")
-plt.ylabel("Frequency")
-plt.xticks(rotation=0)
-plt.grid(axis="y", alpha=0.3)
+l1_counts.plot(kind="bar", color="green", ax=axes[1])
+axes[1].set_title("L1 Ratio Selection Frequency in Elastic Net")
+axes[1].set_xlabel("L1 Ratio")
+axes[1].set_xticks(range(len(l1_grid)))
+axes[1].set_xticklabels(l1_grid, rotation=0)
+axes[1].grid(axis="y", alpha=0.3)
+
 plt.tight_layout()
 plt.show()

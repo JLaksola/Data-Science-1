@@ -30,6 +30,7 @@ actuals = []
 dates = []
 features = []
 best_params = []
+feature_importances_list = []  # Initialize list to store feature importances
 
 # Initialize lists to store CV results
 cv_train_r2_list = []
@@ -92,6 +93,9 @@ for date in pd.date_range(TEST_START, TEST_END, freq="MS"):  # Monthly rolling f
     best_rf = gs.best_estimator_
     best_params.append(gs.best_params_)
 
+    # Extract feature importances and store them
+    feature_importances_list.append(best_rf.feature_importances_)
+
     # Predict
     y_pred = float(best_rf.predict(X_test)[0])
 
@@ -115,11 +119,15 @@ results_df = pd.DataFrame(
         "CV_Valid_R2": cv_valid_r2_list,
         "CV_Train_RMSE": cv_train_rmse_list,
         "CV_Valid_RMSE": cv_valid_rmse_list,
+        "Feature Importances": feature_importances_list,  # Add feature importances to results_df
     }
 ).set_index("Date")
 
 # Save results
 results_df.to_csv("/Users/kayttaja/Desktop/DS1/reports/results_rf.csv", index=True)
+
+
+# Run the following code after the rolling forecast loop to analyze results
 
 # Import results
 results_df = pd.read_csv(
@@ -158,44 +166,73 @@ ax.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.show()
 
-# Plot the feature importances
-importances = best_rf.feature_importances_
-feature_names = X
-indices = np.argsort(importances)
+# Plot the average feature importances from the results_df
+import ast
+
+
+# 1) Parse the column into a 2D float array
+def to_array(v):
+    if isinstance(v, (list, np.ndarray)):
+        return np.asarray(v, dtype=float)
+    if isinstance(v, str):
+        # handle strings like "[0.4698 0.3433 0.1868]" or "[0.4698, 0.3433, 0.1868]"
+        try:
+            out = np.asarray(ast.literal_eval(v), dtype=float)
+        except (ValueError, SyntaxError):
+            out = np.fromstring(v.strip("[]"), sep=" ")
+        return out
+    raise TypeError(f"Can't parse value of type {type(v)}")
+
+
+fi_matrix = np.vstack(results_df["Feature Importances"].map(to_array).values)
+# 2) Build a tidy DataFrame with your feature names
+feature_importances_df = pd.DataFrame(fi_matrix, columns=X, index=results_df.index)
+# 3) Average across runs and sort
+mean_importances = feature_importances_df.mean().sort_values(ascending=True)
+# 4) Bar plot
 plt.figure(figsize=(8, 4))
-plt.title("Feature Importances in Random Forest")
-plt.barh(range(len(indices)), importances[indices], align="center")
-plt.yticks(range(len(indices)), [feature_names[i] for i in indices])
-plt.xlabel("Relative Importance")
-plt.grid(axis="x", alpha=0.3)
+ax = mean_importances.plot(kind="barh")
+ax.set_title("Average Feature Importances in Random Forest")
+ax.set_xlabel("Mean Relative Importance")
+ax.grid(axis="x", alpha=0.3)
 plt.tight_layout()
 plt.show()
 
-# Plot the chosen hyperparameters as subplots
-fig, axes = plt.subplots(1, 3, figsize=(18, 4), constrained_layout=True)
 
-# Plot max_depth selection frequency
-max_depth_values = [params["max_depth"] for params in best_params]
-max_depth_counts = pd.Series(max_depth_values).value_counts().sort_index()
-axes[0].bar(max_depth_counts.index, max_depth_counts.values, color="orange")
-axes[0].set_title("Max Depth Selection Frequency in Random Forest")
-axes[0].set_xlabel("Max Depth")
+# Plot the chosen hyperparameters as subplots
+fig, axes = plt.subplots(1, 3, figsize=(18, 6), constrained_layout=True)
+
+# Plot the chosen min_samples_leaf values as a bar chart
+min_samples_leaf_counts = (
+    pd.Series(results_df["Best Parameters"])
+    .apply(lambda x: eval(x)["min_samples_leaf"])
+    .value_counts()
+)
+min_samples_leaf_counts.plot(kind="bar", color="blue", ax=axes[0])
+axes[0].set_title("Min Samples Leaf Selection Frequency in Random Forest")
+axes[0].set_xlabel("Min Samples Leaf")
 axes[0].set_ylabel("Frequency")
 axes[0].grid(axis="y", alpha=0.3)
 
-# Plot min_samples_leaf selection frequency
-min_samples_values = [params["min_samples_leaf"] for params in best_params]
-min_samples_counts = pd.Series(min_samples_values).value_counts().sort_index()
-axes[1].bar(min_samples_counts.index, min_samples_counts.values, color="orange")
-axes[1].set_title("Min Samples Leaf Selection Frequency in Random Forest")
-axes[1].set_xlabel("Min Samples Leaf")
+# Plot the chosen max_depth values as a bar chart
+max_depth_counts = (
+    pd.Series(results_df["Best Parameters"])
+    .apply(lambda x: eval(x)["max_depth"])
+    .value_counts()
+)
+max_depth_counts.plot(kind="bar", color="orange", ax=axes[1])
+axes[1].set_title("Max Depth Selection Frequency in Random Forest")
+axes[1].set_xlabel("Max Depth")
 axes[1].set_ylabel("Frequency")
 axes[1].grid(axis="y", alpha=0.3)
 
-# Plot max_features selection frequency
-max_features_values = [str(params["max_features"]) for params in best_params]
-max_features_counts = pd.Series(max_features_values).value_counts().sort_index()
-axes[2].bar(max_features_counts.index, max_features_counts.values, color="orange")
+# Plot the chosen max_features values as a bar chart
+max_features_counts = (
+    pd.Series(results_df["Best Parameters"])
+    .apply(lambda x: eval(x)["max_features"])
+    .value_counts()
+)
+max_features_counts.plot(kind="bar", color="green", ax=axes[2])
 axes[2].set_title("Max Features Selection Frequency in Random Forest")
 axes[2].set_xlabel("Max Features")
 axes[2].set_ylabel("Frequency")
